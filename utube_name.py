@@ -23,111 +23,140 @@ def search_yt(query: str):
     data = {i: [f"https://www.youtube.com/watch?v={v[0]}", v[1]] for i, v in enumerate(result)}
     return data
 
-# Streamlit app
-st.title("YouTube Downloader")
-st.write("Search for a YouTube video, select resolution, and download with audio.")
+# Inject custom CSS for styling
+st.markdown(
+    """
+    <style>
+        h1 {
+            color: #ff5733;
+            font-size: 40px;
+            font-weight: bold;
+            text-align: center;
+        }
+        h2 {
+            color: #FFFF00;
+            font-size: 30px;
+            font-weight: bold;
+        }
+        h3 {
+            color: #ff33a8;
+            font-size: 18px;
+        }
+        p {
+            color: #27ae60;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .stRadio > label {
+            font-size: 18px;
+            font-weight: bold;
+            color: #d35400;
+        }
+        div.stButton > button {
+            background-color: #3498db;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 10px;
+            padding: 10px;
+            width: 220px;
+        }
+        div.stTextInput > label {
+            font-size: 20px;
+            font-weight: bold;
+            color: darkblue;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# App title
+st.markdown("<h1>YouTube Downloader</h1>", unsafe_allow_html=True)
+st.markdown("<p>Search for a YouTube video, select resolution, and download it.</p>", unsafe_allow_html=True)
 
 # Input for video search
-search_query = st.text_input("Enter the video name:")
+search_query = st.text_input("🔍 Enter the video name:")
 
-# Initialize session state to store search results and video index
+# Initialize session state
 if 'search_results' not in st.session_state:
     st.session_state.search_results = None
-if 'video_index' not in st.session_state:
-    st.session_state.video_index = 0  # Default index
+if 'selected_video_index' not in st.session_state:
+    st.session_state.selected_video_index = None
+if 'selected_resolution' not in st.session_state:
+    st.session_state.selected_resolution = None  # Store resolution choice
 
-# Reset search results when a new video name is entered
+# Reset search results when a new search query is entered
 if search_query and search_query != st.session_state.get('last_search_query'):
     st.session_state.search_results = None
     st.session_state.last_search_query = search_query
 
 if search_query:
-    # Perform search only if search results are not already stored
     if st.session_state.search_results is None:
         st.session_state.search_results = search_yt(search_query)
 
-    # Display search results
     data = st.session_state.search_results
     
     if data:
-        st.write("Search Results:")
-        for i, v in enumerate(data.values()):
-            st.write(f"{i+1} :-> {v[1]}")
+        st.markdown("<h2>🎥 Search Results:</h2>", unsafe_allow_html=True)
         
-        # Control buttons for video index selection
-        col1, col2, col3 = st.columns([1, 1, 1])
-        
-        with col1:
-            if st.button("Minus"):
-                if st.session_state.video_index > 0:
-                    st.session_state.video_index -= 1
+        # Display radio button choices for video selection
+        video_options = {f"{v[1]}": i for i, v in data.items()}  # {title: index}
+        selected_video_title = st.radio("🎬 Choose a video:", list(video_options.keys()))
 
-        with col2:
-            st.write(f"Selected video: {st.session_state.video_index + 1}")
+        # Store selected video index
+        st.session_state.selected_video_index = video_options[selected_video_title]
 
-        with col3:
-            if st.button("Plus"):
-                if st.session_state.video_index < len(data) - 1:
-                    st.session_state.video_index += 1
-
-        # Use the selected video index to fetch the video link
-        link = data[st.session_state.video_index][0]
-        yt = YouTube(link)
+        # Get selected video link
+        selected_index = st.session_state.selected_video_index
+        link = data[selected_index][0]
+        yt = YouTube(link, use_oauth=False, allow_oauth_cache=True)
 
         # Get available resolutions
-        available_resolutions = list(set([stream.resolution for stream in yt.streams.filter(file_extension='mp4', only_video=True) if stream.resolution]))
+        available_resolutions = sorted(
+            list(set([stream.resolution for stream in yt.streams.filter(file_extension='mp4', only_video=True) if stream.resolution])),
+            reverse=True  # Sort from highest to lowest resolution
+        )
 
-        # Display available resolutions
-        st.write("Available resolutions:")
-        for i, res in enumerate(available_resolutions, start=1):
-            st.write(f"{i}. {res}")
-        
-        # Input for choosing resolution
-        choice = st.number_input("Enter the number corresponding to your preferred resolution:", min_value=1, max_value=len(available_resolutions), value=1, step=1)
-        chosen_resolution = available_resolutions[choice - 1]
+        # Ensure resolutions are available
+        if available_resolutions:
+            st.markdown("<h2>📺 Available Resolutions:</h2>", unsafe_allow_html=True)
 
-        if st.button("Download"):
-            # Get the video stream with the chosen resolution
-            video_stream = yt.streams.filter(file_extension='mp4', resolution=chosen_resolution, only_video=True).first()
+            # Radio button for resolution selection
+            chosen_resolution = st.radio("🎯 Select a resolution:", available_resolutions)
 
-            # Get the audio stream (highest quality audio)
-            audio_stream = yt.streams.filter(only_audio=True).first()
+            # Store selected resolution
+            st.session_state.selected_resolution = chosen_resolution
 
-            # Progress bars for video and audio downloads
-            st.write("Downloading video...")
-            video_progress = st.progress(0)
-            for i in range(100):  # Simulating progress for video download
-                time.sleep(0.03)
-                video_progress.progress(i + 1)
-            video_file = video_stream.download(output_path=SAVE_PATH, filename="temp_vid")
-            st.write("Video downloaded.")
+            # Download button
+            if st.button("📥 Download Now"):
+                video_stream = yt.streams.filter(file_extension='mp4', resolution=chosen_resolution, only_video=True).first()
+                audio_stream = yt.streams.filter(only_audio=True).first()
 
-            st.write("Downloading audio...")
-            audio_progress = st.progress(0)
-            for i in range(100):  # Simulating progress for audio download
-                time.sleep(0.03)
-                audio_progress.progress(i + 1)
-            audio_file = audio_stream.download(output_path=SAVE_PATH, filename="temp_aud")
-            st.write("Audio downloaded.")
+                # Simulated progress bars
+                st.markdown("<h3>⏳ Wait kar... Video download ho raha hai...</h3>", unsafe_allow_html=True)
+                video_progress = st.progress(0)
+                for i in range(100):
+                    time.sleep(0.03)
+                    video_progress.progress(i + 1)
+                video_file = video_stream.download(output_path=SAVE_PATH, filename="temp_vid")
+                st.markdown("<h3>✅ Video download ho gaya!</h3>", unsafe_allow_html=True)
 
-            # Set output file path
-            output_file = os.path.join(SAVE_PATH, yt.title + "Mixed.mp4")
+                st.markdown("<h3>⏳ Wait kar... Audio download ho raha hai...</h3>", unsafe_allow_html=True)
+                audio_progress = st.progress(0)
+                for i in range(100):
+                    time.sleep(0.03)
+                    audio_progress.progress(i + 1)
+                audio_file = audio_stream.download(output_path=SAVE_PATH, filename="temp_aud")
+                st.markdown("<h3>✅ Audio bhi download ho gaya!</h3>", unsafe_allow_html=True)
 
-            # Combine video and audio using ffmpeg (ensure ffmpeg is installed)
-            st.write("Merging video and audio...")
-            os.system(f'ffmpeg -i "{video_file}" -i "{audio_file}" -c:v copy -c:a aac "{output_file}"')
-            st.success('Download complete!')
+                # Set output file path
+                output_file = os.path.join(SAVE_PATH, yt.title + "Mixed.mp4")
 
+                # Merge video and audio using ffmpeg
+                st.markdown("<h3>⏳ Bas thoda aur wait... Video aur audio merge ho raha hai...</h3>", unsafe_allow_html=True)
+                os.system(f'ffmpeg -i "{video_file}" -i "{audio_file}" -c:v copy -c:a aac "{output_file}"')
 
-
-
-
-
-
-
-
-
-
-
-
-
+                st.success("🎉 Download complete ho gaya! Ja sun le aur maje kar! 😎")
+        else:
+            st.markdown("<h3 style='color: red;'>🚨 No available resolutions found.</h3>", unsafe_allow_html=True)
